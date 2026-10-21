@@ -8,8 +8,8 @@
 
 | 版本 | 大小 | 说明 |
 |---|---|---|
-| `公路.apk` | 约 14 MB | 精简版：题库全在，不含题图；缺图处显示「（题图缺失）」 |
-| `公路-完整版.apk` | 约 280 MB | 含 39,461 张题图，图形推理/资料分析可正常做 |
+| [gonglu.apk](https://github.com/lionheart6666/demo/releases/download/v1.0/gonglu.apk) | 约 14 MB | 精简版：题库全在，不含题图；缺图处显示「（题图缺失）」 |
+| [gonglu-full.apk](https://github.com/lionheart6666/demo/releases/download/v1.0/gonglu-full.apk) | 约 280 MB | 含 39,461 张题图，图形推理/资料分析可正常做 |
 
 下载后点开安装，系统提示时允许「安装未知来源应用」。
 
