@@ -9,7 +9,7 @@ PLATFORM = os.path.join(SDK, 'android-13', 'android.jar')
 PROJ = r'C:\Users\zzy\AppData\Local\Temp\apkbuild'
 BUILD = os.path.join(PROJ, 'build')
 ASSETS = sys.argv[1] if len(sys.argv) > 1 else 'assets'
-OUT_APK = sys.argv[2] if len(sys.argv) > 2 else r'C:\Users\zzy\AppData\Local\Temp\码上成公.apk'
+OUT_APK = sys.argv[2] if len(sys.argv) > 2 else r'C:\Users\zzy\AppData\Local\Temp\公路.apk'
 
 ENV = dict(os.environ)
 ENV['JAVA_HOME'] = JDK
