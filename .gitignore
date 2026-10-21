@@ -1,0 +1,7 @@
+﻿*.jks
+*.apk
+android/assets/
+android/assets_full/
+android/build/
+data/img/
+
