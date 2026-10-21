@@ -1,13 +1,18 @@
 package com.kaogong.app;
 
 import android.app.Activity;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.provider.MediaStore;
+import android.util.Base64;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -15,10 +20,12 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Toast;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -44,6 +51,7 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         web.setBackgroundColor(0xFFF5F5F7);
+        web.addJavascriptInterface(new BackupBridge(this), "AndroidBackup");
 
         web.setWebViewClient(new WebViewClient() {
             @Override
@@ -117,6 +125,55 @@ public class MainActivity extends Activity {
             }
         }
         return super.onKeyDown(keyCode, event);
+    }
+
+    /** 网页端导出备份的原生桥：把 base64 内容写入系统「下载」目录（Q+ 用 MediaStore，免权限） */
+    public static class BackupBridge {
+        private final Activity act;
+        BackupBridge(Activity a) { this.act = a; }
+
+        @JavascriptInterface
+        public void save(final String name, final String b64) {
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    String err = null;
+                    try {
+                        byte[] data = Base64.decode(b64, Base64.DEFAULT);
+                        if (Build.VERSION.SDK_INT >= 29) {
+                            ContentValues v = new ContentValues();
+                            v.put(MediaStore.Downloads.DISPLAY_NAME, name);
+                            v.put(MediaStore.Downloads.MIME_TYPE, "application/json");
+                            v.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                            Uri uri = act.getContentResolver().insert(
+                                    MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                            if (uri == null) throw new IOException("insert failed");
+                            OutputStream out = act.getContentResolver().openOutputStream(uri);
+                            if (out == null) throw new IOException("open failed");
+                            out.write(data);
+                            out.close();
+                        } else {
+                            java.io.File dir = act.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+                            if (dir == null) throw new IOException("no external storage");
+                            OutputStream out = new java.io.FileOutputStream(new java.io.File(dir, name));
+                            out.write(data);
+                            out.close();
+                        }
+                    } catch (Exception e) {
+                        err = e.getMessage();
+                    }
+                    if (err != null) {
+                        final String msg = "备份保存失败: " + err;
+                        act.runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                Toast.makeText(act, msg, Toast.LENGTH_LONG).show();
+                            }
+                        });
+                    }
+                }
+            }).start();
+        }
     }
 
     private static String mimeOf(String path) {

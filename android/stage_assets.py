@@ -41,6 +41,13 @@ sl = os.path.join(SRC, 'data', 'bank', 'shenlun.json')
 if os.path.exists(sl):
     shutil.copy(sl, os.path.join(DST, 'data', 'bank', 'shenlun.json'))
 
+# 历年真题索引（ASCII 文件名，直接复制）
+pp = os.path.join(SRC, 'data', 'bank', 'papers.json')
+if os.path.exists(pp):
+    shutil.copy(pp, os.path.join(DST, 'data', 'bank', 'papers.json'))
+else:
+    print('MISSING: papers.json')
+
 print('题图目录不打包（精简版）')
 print('重命名文件数:', len(name_map))
 print('assets 总大小: %.1f MB' % (sum(

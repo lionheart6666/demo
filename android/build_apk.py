@@ -42,7 +42,7 @@ run([os.path.join(BT, 'aapt2.exe'), 'link',
      '-R', os.path.join(BUILD, 'res.zip'),
      '--java', os.path.join(BUILD, 'gen'),
      '--min-sdk-version', '23',
-     '--target-sdk-version', '33',
+     '--target-sdk-version', '34',
      '-A', ASSETS,
      '--auto-add-overlay'])
 

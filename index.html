@@ -148,10 +148,33 @@ input[type=file] { display:none; }
 #app.theme-dark .opt.wrong { color:var(--red); }
 #app.theme-dark .ryes { color:var(--green); }
 #app.theme-dark .trendline { stroke:#4A4C55; }
+/* ===== 配色方案 ===== */
+#app.pal-yellow { --accent:#D9930D; --accent-soft:rgba(217,147,13,.13); }
+#app.pal-blue { --accent:#5B7C99; --accent-soft:rgba(91,124,153,.15); }
+#app.theme-dark.pal-yellow { --accent:#F5B32B; --accent-soft:rgba(245,179,43,.18); }
+#app.theme-dark.pal-blue { --accent:#8AB0CC; --accent-soft:rgba(138,176,204,.20); }
+#app.pal-yellow .header { background:rgba(247,199,72,.88); }
+#app.theme-dark.pal-yellow .header { background:rgba(66,52,10,.80); }
+.palcard { display:flex; align-items:center; gap:12px; background:var(--fill); border-radius:14px; padding:13px 16px; margin-bottom:8px; font-size:14px; font-weight:700; color:var(--text); cursor:pointer; border:1.5px solid transparent; transition:border-color .15s ease; }
+.palcard.on { border-color:var(--accent); background:var(--accent-soft); }
+.paldots { display:flex; gap:5px; }
+.paldots i { width:16px; height:16px; border-radius:50%; display:block; box-shadow:inset 0 0 0 1px rgba(0,0,0,.10); }
+.palcheck { margin-left:auto; color:var(--accent); visibility:hidden; }
+.palcard.on .palcheck { visibility:visible; }
+/* ===== 打卡日历热力图 ===== */
+.calgrid { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; margin-top:8px; }
+.calhead { font-size:10px; color:var(--text3); text-align:center; }
+.calcell { aspect-ratio:1; border-radius:8px; font-size:10.5px; display:flex; align-items:center; justify-content:center; color:var(--text2); background:var(--fill); position:relative; }
+.calcell.today { box-shadow:0 0 0 1.5px var(--accent); }
+.calcell .cdot { position:absolute; bottom:2px; width:4px; height:4px; border-radius:50%; background:var(--orange); }
+.calnav { display:flex; justify-content:space-between; align-items:center; font-size:13px; color:var(--text2); }
+.calnav b { color:var(--text); font-size:14px; }
+.calnav span { cursor:pointer; padding:4px 12px; color:var(--accent); }
 /* ===== 字体 ===== */
 #app.font-serif { font-family:"Songti SC","STSong","STZhongsong","SimSun",serif; }
 #app.font-rounded { font-family:"Yuanti SC","YouYuan","Arial Rounded MT Bold","Microsoft YaHei",sans-serif; }
 /* ===== 字号 ===== */
+#app.size-small .body { zoom:.94; }
 #app.size-large .body { zoom:1.12; }
 #app.size-xl .body { zoom:1.25; }
 </style>
@@ -188,7 +211,10 @@ function migrateOldPoints(){
     return null;
   };
   let changed=false;
+  /* 资料分析小考点并入大组 */
+  const ZL_MERGE = { '基期现期':'增长', '增长量增长率':'增长', '比重倍数平均数':'比重', '速算':'综合' };
   DB.questions.forEach(q=>{
+    if(ZL_MERGE[q.exam_point]){ q.exam_point=ZL_MERGE[q.exam_point]; changed=true; }
     if(['计算机科学技术基础','计算机理论','计算机软件及使用','经济金融基础','英语阅读','计算机多选'].includes(q.exam_point)){
       const np=byStem(q.stem+' '+q.analysis);
       if(np){ q.exam_point=np; changed=true; }
@@ -246,8 +272,21 @@ function sparkline(data){
   </svg><div class="hint" style="text-align:right">最近 ${data.length} 组 · 最新 ${Math.round(last.acc*100)}%</div>`;
 }
 /* 数据备份 */
+/* 导出内容：剔除 GitHub token，避免备份文件外传时泄露 */
+function exportPayload(){
+  const d=JSON.parse(JSON.stringify(DB));
+  if(d.settings) delete d.settings.ghToken;
+  return JSON.stringify(d,null,2);
+}
 function exportDB(){
-  const blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});
+  const payload=exportPayload();
+  // App 内：走原生桥直接写入系统「下载」目录
+  if(window.AndroidBackup && AndroidBackup.save){
+    AndroidBackup.save(`kaogong-backup-${dayKey()}.json`, btoa(unescape(encodeURIComponent(payload))));
+    toast('备份已保存到系统下载目录');
+    return;
+  }
+  const blob=new Blob([payload],{type:'application/json'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
   a.download=`kaogong-backup-${dayKey()}.json`;
@@ -313,7 +352,7 @@ function applySettings(){
   let theme = st.theme;
   if(theme==='auto') theme = (mqDark && mqDark.matches) ? 'dark' : 'default';
   const app=document.getElementById('app');
-  app.className=`theme-${theme} font-${st.font} size-${st.size}`;
+  app.className=`theme-${theme} font-${st.font} size-${st.size} pal-${st.palette||'apple'}`;
   document.body.style.background = theme==='dark' ? '#101114' : '#E8EAED';
 }
 // 系统切换亮暗时, auto 模式实时跟随
@@ -322,14 +361,20 @@ function setSetting(g,v){ DB.settings[g]=v; save(); applySettings(); render(); }
 function settingsCard(){
   const st=DB.settings;
   const chip=(g,v,label)=>`<span class="reason ${st[g]===v?'on':''}" onclick="setSetting('${g}','${v}')">${label}</span>`;
+  const pal=(k,name,dots)=>`<div class="palcard ${(st.palette||'apple')===k?'on':''}" onclick="setSetting('palette','${k}')">
+    <span class="paldots">${dots.map(c=>`<i style="background:${c}"></i>`).join('')}</span>${name}<span class="palcheck">✓</span></div>`;
   return `<div class="card">
-    <div class="ptitle">🎨 外观设置</div>
+    <div class="ptitle">🎨 主题管理</div>
     <div class="gname">亮暗模式</div>
     <div class="reasons">${chip('theme','default','☀️ 亮色')}${chip('theme','dark','🌙 暗色')}${chip('theme','auto','🔄 跟随系统')}</div>
+    <div class="gname">整体配色</div>
+    ${pal('apple','苹果白（默认）',['#0071E3','#F5F5F7','#1D1D1F'])}
+    ${pal('yellow','经典黄',['#F5C242','#FFF6DC','#3D2E00'])}
+    ${pal('blue','雾蓝金融',['#5B7C99','#EFF4F8','#22303C'])}
     <div class="gname">字体</div>
     <div class="reasons">${chip('font','default','系统默认')}${chip('font','serif','宋体')}${chip('font','rounded','圆体')}</div>
     <div class="gname">字号</div>
-    <div class="reasons">${chip('size','normal','标准')}${chip('size','large','大字')}${chip('size','xl','特大')}</div>
+    <div class="reasons">${chip('size','small','小号')}${chip('size','normal','中等')}${chip('size','large','大号')}</div>
   </div>`;
 }
 
@@ -350,11 +395,11 @@ const SAMPLES = [
  ['金监专业课','多选','SQL与事务','数据库事务的 ACID 特性包括？',['原子性','一致性','隔离性','持久性'],'ABCD','ACID: Atomicity/Consistency/Isolation/Durability。'],
  ['金监专业课','多选','软件与工程','下列属于软件测试方法的有？',['黑盒测试','白盒测试','灰盒测试','红盒测试'],'ABC','无"红盒测试"。'],
  ['金监专业课','多选','网络安全','网络安全中常见的攻击方式有？',['SQL注入','XSS','CSRF','DDoS'],'ABCD','均为常见攻击方式。'],
- ['行测','单选','基期现期','2023年某市GDP为5000亿元，同比增长10%，则2022年GDP约为？',['4500亿','4545亿','4600亿','4950亿'],'B','基期=现期/(1+r)=5000/1.1≈4545。'],
- ['行测','单选','基期现期','某产品2023年产量120万吨，比上年增长20%，增长量为？',['20万吨','24万吨','22万吨','18万吨'],'A','增长量=现期×r/(1+r)=120×0.2/1.2=20。'],
- ['行测','单选','增长量增长率','2022年出口额800亿，2023年增至1000亿，增长率是？',['20%','25%','22.5%','30%'],'B','(1000-800)/800=25%。'],
- ['行测','单选','比重倍数平均数','某班男生30人占全班60%，全班人数为？',['45','50','55','60'],'B','30/0.6=50。'],
- ['行测','单选','速算','12345×11=？',['135795','135975','135759','135597'],'A','×11速算: 两边一拉, 中间相加。'],
+ ['行测','单选','增长','2023年某市GDP为5000亿元，同比增长10%，则2022年GDP约为？',['4500亿','4545亿','4600亿','4950亿'],'B','基期=现期/(1+r)=5000/1.1≈4545。'],
+ ['行测','单选','增长','某产品2023年产量120万吨，比上年增长20%，增长量为？',['20万吨','24万吨','22万吨','18万吨'],'A','增长量=现期×r/(1+r)=120×0.2/1.2=20。'],
+ ['行测','单选','增长','2022年出口额800亿，2023年增至1000亿，增长率是？',['20%','25%','22.5%','30%'],'B','(1000-800)/800=25%。'],
+ ['行测','单选','比重','某班男生30人占全班60%，全班人数为？',['45','50','55','60'],'B','30/0.6=50。'],
+ ['行测','单选','综合','12345×11=？',['135795','135975','135759','135597'],'A','×11速算: 两边一拉, 中间相加。'],
  ['行测','单选','逻辑判断','"如果下雨，地就湿。地没湿，所以？"',['没下雨','下雨了','可能下雨','无法确定'],'A','逆否命题: 否后必否前。'],
  ['行测','单选','逻辑判断','所有金属都导电，铁是金属，所以铁导电。这是？',['归纳推理','演绎推理','类比推理','或然推理'],'B','三段论演绎推理。'],
  ['行测','单选','图形推理','图形笔画数规律: "日"字是几笔画图形？',['一笔画','两笔画','三笔画','不能一笔画且非两笔'],'B','"日"有4个奇点, 奇点数/2=2, 两笔画。'],
@@ -410,11 +455,10 @@ const TABS = [
   {k:'tips', n:'技巧', ic:'bulb'},
   {k:'course', n:'课程', ic:'play'},
   {k:'recite', n:'背诵', ic:'stack'},
-  {k:'mindmap', n:'导图', ic:'list'},
   {k:'profile', n:'我的', ic:'person'},
 ];
-const TITLES = { practice:'练习', tips:'技巧库', course:'课程', recite:'背诵', mindmap:'导图', profile:'我的', quiz:'刷题', import:'导入题库', mistake:'错题本', shenlun:'申论练习' };
-const STACK = ['quiz','import','mistake','shenlun'];
+const TITLES = { practice:'练习', tips:'技巧库', course:'课程', recite:'背诵', mindmap:'导图', profile:'我的', quiz:'刷题', import:'导入题库', mistake:'错题本', shenlun:'申论练习', papers:'历年真题', paper:'试卷' };
+const STACK = ['quiz','import','mistake','shenlun','papers','paper'];
 
 /* ================= 练习 ================= */
 const MODULES = [
@@ -428,7 +472,7 @@ const MODULES = [
     { name:'经济金融', items:['微观经济','宏观经济','金融与保险'] },
     { name:'英语', items:['阅读理解'] } ]},
   { key:'xz', title:'行测', groups:[
-    { name:'资料分析', items:['基期现期','增长量增长率','比重倍数平均数','速算'] },
+    { name:'资料分析', items:['综合','增长','比重','平均数','倍数'] },
     { name:'判断推理', items:['逻辑判断','图形推理','类比推理','定义判断'] },
     { name:'言语理解', items:['片段阅读','逻辑填空','语句表达'] },
     { name:'数量关系', items:['工程行程','和差倍比','排列组合概率'] },
@@ -502,7 +546,7 @@ function mergedEntries(g){
 
 function viewPractice(){
   let h = `<div class="quick">
-    <div onclick="go('quiz',{source:'真题'})"><span>${icon('doc')}</span>历年真题</div>
+    <div onclick="go('papers')"><span>${icon('doc')}</span>历年真题</div>
     <div onclick="go('mistake')"><span>${icon('xmark')}</span>我的错题</div>
     <div onclick="go('mistake',{tab:'marked'})"><span>${icon('star')}</span>收藏标记</div>
     <div onclick="go('import')"><span>${icon('down')}</span>导入题库</div>
@@ -613,6 +657,21 @@ function startQuiz(params){
       if(pick) pool = pool.concat(BANK_DATA[pick]);
     }
     if(!pool.length){ toast('暂无足够题目可组卷（先刷几组题或从考点进入）'); return; }
+  } else if(params.pi!=null){
+    // 历年真题: 整套刷 或 按模块刷
+    const P=PAPERS&&PAPERS[params.pi];
+    if(!P){ ensurePapers(); return; }
+    const pts=params.part?[params.part]:Object.keys(P.pts);
+    const missing=pts.filter(pt=>BANK_FILES[pt]&&!BANK_DATA[pt]);
+    if(missing.length && !params._second){
+      missing.forEach(ensureBankPoint);
+      setTimeout(()=>go('quiz',{...params,_second:true}),800);
+      return;
+    }
+    const idset=new Set();
+    pts.forEach(pt=>(P.pts[pt]||[]).forEach(id=>idset.add(id)));
+    pts.forEach(pt=>{ (BANK_DATA[pt]||[]).forEach(q=>{ if(idset.has(q.id)) pool.push(q); }); });
+    if(!pool.length){ toast('该试卷题目加载失败'); return; }
   } else {
     // 同名考点合并后: params.point 刷真题库, params.seedName 刷示例题
     if(params.point && BANK_FILES[params.point] && !BANK_DATA[params.point]){ ensureBankPoint(params.point); return; }
@@ -627,8 +686,8 @@ function startQuiz(params){
     if(params.point && BANK_FILES[params.point] && !BANK_DATA[params.point]) return; // 加载中, viewQuiz 会显示提示
     toast(params.point ? '该考点暂无题目，请先到「导入题库」录入题目' : '真题已按考点拆分，请从下方「行测」的具体考点进入刷题'); return;
   }
-  const size = params.mode==='weak' ? 20 : GROUP_SIZE;
-  pool = pool.slice().sort(()=>Math.random()-.5).slice(0, size);
+  const size = params.pi!=null ? pool.length : (params.mode==='weak' ? 20 : GROUP_SIZE);
+  pool = params.pi!=null ? pool : pool.slice().sort(()=>Math.random()-.5).slice(0, size); // 试卷模式保持原卷顺序
   QZ = { qs:pool, idx:0, sel:[], marked:false, show:false, recs:[], gid:Date.now(), params,
          done:false, target: params.mode==='redo'?0.9:0.8, mode:params.mode||'', t0:Date.now(), q0:Date.now(), warned:false };
 }
@@ -756,6 +815,53 @@ function quizResult(){
   </div>`;
 }
 function retryGroup(){ go('quiz', S.params); QZ=null; startQuiz(S.params); render(); }
+
+/* ================= 历年真题（按试卷浏览） ================= */
+let PAPERS=null, PAPERS_LOADING=false;
+function ensurePapers(){
+  if(PAPERS||PAPERS_LOADING) return;
+  PAPERS_LOADING=true;
+  fetch('data/bank/papers.json').then(r=>r.json()).then(d=>{ PAPERS=d; PAPERS_LOADING=false; render(); }).catch(()=>{ PAPERS_LOADING=false; });
+}
+let PAPER_YF=null;
+function paperYear(y){ PAPER_YF=y; render(); }
+function viewPapers(){
+  ensurePapers();
+  if(!PAPERS) return `<div class="empty">试卷索引加载中…</div>`;
+  const years=[...new Set(PAPERS.map(p=>p.y))].sort((a,b)=>b-a);
+  const yf=PAPER_YF||years[0];
+  const list=PAPERS.map((p,i)=>({p,i})).filter(x=>x.p.y===yf);
+  let h=`<div class="card"><div class="reasons" style="flex-wrap:wrap">${years.map(y=>`<span class="reason ${y===yf?'on':''}" onclick="paperYear(${y})">${y}</span>`).join('')}</div></div>`;
+  h+=`<div class="card" style="padding:6px 14px">`;
+  list.forEach(({p,i})=>{
+    h+=`<div class="row" style="font-size:14px" onclick="go('paper',{pi:${i}})">${esc(p.name)}<em>${p.n} 题 ›</em></div>`;
+  });
+  h+=`</div><div class="hint" style="text-align:center">${yf} 年共 ${list.length} 套 · 点进去可整套刷或按模块刷</div>`;
+  return h;
+}
+function viewPaper(){
+  ensurePapers();
+  const p=PAPERS&&PAPERS[S.params.pi];
+  if(!p) return `<div class="empty">加载中…</div>`;
+  const groups={};
+  Object.keys(p.pts).forEach(pt=>{
+    const g=BANK2GROUP[BANK_GROUP[pt]]||BANK_GROUP[pt]||'其他';
+    (groups[g]=groups[g]||[]).push(pt);
+  });
+  let h=`<div class="card"><div class="ptitle" style="font-size:15px;line-height:22px">${esc(p.name)}</div>
+    <div class="hint">共 ${p.n} 题 · 整套刷按模块顺序排列，不拆分组</div>
+    <div class="actions"><button class="btn" onclick="go('quiz',{pi:${S.params.pi}})">整套刷（${p.n} 题）</button></div></div>`;
+  h+=`<div class="card" style="padding:6px 14px"><div class="row" style="font-weight:700;font-size:14px">按模块刷<em></em></div>`;
+  Object.entries(groups).forEach(([g,pts])=>{
+    pts.sort((a,b)=>p.pts[b].length-p.pts[a].length);
+    pts.forEach(pt=>{
+      const nm=pt.split('·')[1]||pt;
+      h+=`<div class="row" style="padding-left:12px;font-size:14px" onclick="go('quiz',{pi:${S.params.pi},part:'${pt}'})">${g} · ${nm}<em>${p.pts[pt].length} 题 ›</em></div>`;
+    });
+  });
+  h+=`</div>`;
+  return h;
+}
 
 /* ================= 错题本 ================= */
 const REASONS=['概念不清','记错','粗心','方法缺失'];
@@ -900,65 +1006,144 @@ function insertQ(row){
   return true;
 }
 
-/* ================= 课程(视频) ================= */
-const KIND_TAG={local:'本地',baidu:'百度网盘',aliyun:'阿里云盘',url:'直链'};
+/* ================= 课程（本地资料） ================= */
+const KIND_TAG={local:'本地视频',baidu:'百度网盘',aliyun:'阿里云盘',url:'视频直链',link:'资料链接'};
+/* 本地视频 blob 存 IndexedDB，重启后仍可播放 */
+let IDB=null;
+function idb(){ return new Promise((res,rej)=>{ if(IDB) return res(IDB);
+  const r=indexedDB.open('kg_media',1);
+  r.onupgradeneeded=()=>r.result.createObjectStore('videos');
+  r.onsuccess=()=>{IDB=r.result;res(IDB)}; r.onerror=()=>rej(r.error); }); }
+function idbPut(k,blob){ return idb().then(db=>new Promise((res,rej)=>{ const tx=db.transaction('videos','readwrite'); tx.objectStore('videos').put(blob,k); tx.oncomplete=res; tx.onerror=()=>rej(tx.error); })); }
+function idbGet(k){ return idb().then(db=>new Promise((res,rej)=>{ const rq=db.transaction('videos').objectStore('videos').get(k); rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); })); }
+function idbDel(k){ return idb().then(db=>new Promise(res=>{ const tx=db.transaction('videos','readwrite'); tx.objectStore('videos').delete(k); tx.oncomplete=res; })); }
+const VURL_CACHE={};
+if(!Array.isArray(DB.videos)) DB.videos=[];
+
+let ADD_RES=false, RES_EDIT=0, RES_FF='';
+function resFolders(){ return [...new Set(DB.videos.map(v=>v.folder||'').filter(Boolean))]; }
 function viewCourse(){
-  let h = `<div class="actions">
-    <button onclick="document.getElementById('vpick').click()">📁 导入本地视频</button>
-    <button onclick="addLinkPrompt()">🔗 添加网盘链接</button>
-  </div>
-  <input type="file" id="vpick" accept="video/*" onchange="pickVideo(this)">
-  <div id="vplay"></div>`;
-  if(ADD_LINK){
-    h += `<div class="card">
-      <div class="ptitle">添加视频链接</div>
-      <input type="text" id="vUrl" placeholder="网盘分享链接或视频直链(mp4/m3u8)" style="width:100%;margin-bottom:8px">
+  let h=`<div class="actions"><button onclick="resToggleAdd()">＋ 添加本地资料</button></div>
+    <input type="file" id="vpick" accept="video/*" style="display:none" onchange="pickVideo(this)">
+    <div id="vplay"></div>`;
+  if(ADD_RES){
+    h+=`<div class="card">
+      <div class="ptitle">添加本地资料</div>
+      <div class="hint" style="margin-bottom:8px">本地视频会保存在手机内，重启不丢失；网盘/网页链接只存地址，打开时跳转</div>
+      <div class="actions" style="margin-top:0">
+        <button onclick="document.getElementById('vpick').click()">📁 选择本地视频</button>
+      </div>
+      <div class="gname" style="margin-top:10px">或添加链接</div>
+      <input type="text" id="vUrl" placeholder="网盘分享链接 / 网页链接 / 视频直链(mp4、m3u8)" style="width:100%;margin-bottom:8px">
       <input type="text" id="vTitle" placeholder="标题（可空）" style="width:100%;margin-bottom:8px">
-      <div class="actions"><button onclick="addLinkSave()">保存</button><button onclick="addLinkPrompt()">取消</button></div>
+      <div class="actions"><button onclick="addLinkSave()">保存链接</button><button class="btn ghost" onclick="resToggleAdd()">收起</button></div>
     </div>`;
   }
-  if(!DB.videos.length) h += `<div class="empty">暂无视频，点上方按钮导入</div>`;
-  DB.videos.slice().reverse().forEach(v=>{
-    h += `<div class="vcard">
-      <span class="vplay" onclick="openVideo(${v.id})">▶</span>
+  const folders=resFolders();
+  if(DB.videos.length){
+    h+=`<div class="reasons" style="margin:0 0 10px;flex-wrap:wrap">
+      <span class="reason ${RES_FF===''?'on':''}" onclick="resFF('')">全部</span>
+      ${folders.map(f=>`<span class="reason ${RES_FF===f?'on':''}" onclick="resFF('${esc(f)}')">${esc(f)}</span>`).join('')}
+      <span class="reason ${RES_FF==='__none'?'on':''}" onclick="resFF('__none')">未分组</span></div>`;
+  }
+  const list=DB.videos.map((v,i)=>({v,i})).filter(x=>RES_FF===''||(RES_FF==='__none'?!x.v.folder:x.v.folder===RES_FF));
+  if(!DB.videos.length) h+=`<div class="empty">暂无资料，点上方「＋ 添加本地资料」</div>`;
+  else if(!list.length) h+=`<div class="empty">该分组暂无资料</div>`;
+  list.forEach(({v,i})=>{
+    if(RES_EDIT===v.id){
+      h+=`<div class="card"><div class="ptitle">编辑资料</div>
+        <input type="text" id="resET" value="${esc(v.title)}" placeholder="标题" style="width:100%;margin-bottom:8px">
+        <input type="text" id="resEF" list="folderList" value="${esc(v.folder||'')}" placeholder="收藏夹 / 分组名（可空）" style="width:100%;margin-bottom:8px">
+        <datalist id="folderList">${folders.map(f=>`<option value="${esc(f)}">`).join('')}</datalist>
+        <div class="actions"><button class="btn" onclick="resEditSave(${v.id})">保存</button><button class="btn ghost" onclick="resEditCancel()">取消</button></div></div>`;
+      return;
+    }
+    const playable=v.kind==='local'||v.kind==='url';
+    h+=`<div class="vcard">
+      <span class="vplay" onclick="openVideo(${v.id})">${playable?'▶':'🔗'}</span>
       <div style="flex:1" onclick="openVideo(${v.id})">
-        <div class="vtitle">${esc(v.title)}</div>
-        <div class="vmeta">${KIND_TAG[v.kind]||v.kind}${v.module?' · '+esc(v.module):''}</div>
+        <div class="vtitle">${v.fav?'⭐ ':''}${esc(v.title)}</div>
+        <div class="vmeta">${KIND_TAG[v.kind]||v.kind}${v.folder?' · 📂'+esc(v.folder):''}</div>
       </div>
-      <span class="vdel" onclick="delVideo(${v.id})">✕</span>
+      <span class="vdel" onclick="resMove(${v.id},-1)" title="上移">↑</span>
+      <span class="vdel" onclick="resMove(${v.id},1)" title="下移">↓</span>
+      <span class="vdel" onclick="resFav(${v.id})" title="收藏">${v.fav?'★':'☆'}</span>
+      <span class="vdel" onclick="resEditStart(${v.id})" title="编辑">✏️</span>
+      <span class="vdel" onclick="delVideo(${v.id})" title="删除">✕</span>
     </div>`;
   });
   return h;
 }
+function resToggleAdd(){ ADD_RES=!ADD_RES; render(); }
+function resFF(f){ RES_FF=f; render(); }
+function resFav(id){ const v=DB.videos.find(x=>x.id===id); if(v){ v.fav=!v.fav; save(); render(); } }
+function resMove(id,dir){
+  const i=DB.videos.findIndex(x=>x.id===id), j=i+dir;
+  if(i<0||j<0||j>=DB.videos.length) return;
+  [DB.videos[i],DB.videos[j]]=[DB.videos[j],DB.videos[i]]; save(); render();
+}
+function resEditStart(id){ RES_EDIT=id; render(); }
+function resEditCancel(){ RES_EDIT=0; render(); }
+function resEditSave(id){
+  const v=DB.videos.find(x=>x.id===id); if(!v) return;
+  const t=(document.getElementById('resET').value||'').trim();
+  const f=(document.getElementById('resEF').value||'').trim();
+  if(!t){ toast('标题不能为空'); return; }
+  v.title=t; v.folder=f;
+  RES_EDIT=0; save(); render();
+}
 function pickVideo(input){
   const f=input.files[0]; if(!f) return;
-  const url=URL.createObjectURL(f);
-  DB.videos.push({ id:nid(), title:f.name.replace(/\.[^.]+$/,''), kind:'local', uri:url, module:'' });
-  save(); render();
-  setTimeout(()=>openVideo(DB.videos[DB.videos.length-1].id),50);
+  const id=nid();
+  toast('正在保存视频…');
+  idbPut(id,f).then(()=>{
+    DB.videos.push({ id, title:f.name.replace(/\.[^.]+$/,''), kind:'local', uri:'idb:'+id, module:'', folder:'', fav:false, created:Date.now() });
+    save(); render();
+    setTimeout(()=>openVideo(id),50);
+  }).catch(()=>toast('视频保存失败（存储空间不足？）'));
+  input.value='';
 }
-let ADD_LINK=false;
-function addLinkPrompt(){ ADD_LINK=!ADD_LINK; render(); }
 function addLinkSave(){
   const url=(document.getElementById('vUrl').value||'').trim();
   if(!url){ toast('请填写链接'); return; }
-  const title=(document.getElementById('vTitle').value||'').trim()||url.slice(0,30);
-  const kind=/pan\.baidu\.com/.test(url)?'baidu':/alipan|aliyundrive/.test(url)?'aliyun':'url';
-  DB.videos.push({ id:nid(), title, kind, uri:url, module:'' });
-  ADD_LINK=false; save(); render();
+  const title=(document.getElementById('vTitle').value||'').trim()||url.slice(0,40);
+  // 只有真正的视频直链才可播放，其余一律按外部链接打开
+  const kind=/pan\.baidu\.com/.test(url)?'baidu':/alipan|aliyundrive/.test(url)?'aliyun':/\.(mp4|m3u8|mov|webm)(\?|#|$)/i.test(url)?'url':'link';
+  DB.videos.push({ id:nid(), title, kind, uri:url, module:'', folder:'', fav:false, created:Date.now() });
+  save(); render();
 }
 function openVideo(id){
   const v=DB.videos.find(v=>v.id===id); if(!v) return;
-  if(v.kind==='local'||v.kind==='url'){
+  if(v.kind==='local'){
+    const play=url=>{
+      document.getElementById('vplay').innerHTML=
+        `<div class="card"><div class="ptitle">${esc(v.title)}</div><video src="${url}" controls autoplay></video></div>`;
+      window.scrollTo(0,0);
+    };
+    if(VURL_CACHE[v.id]) return play(VURL_CACHE[v.id]);
+    idbGet(v.id).then(blob=>{
+      if(!blob){ toast('本地视频数据不存在（可能已被清理）'); return; }
+      VURL_CACHE[v.id]=URL.createObjectURL(blob);
+      play(VURL_CACHE[v.id]);
+    }).catch(()=>toast('读取视频失败'));
+  } else if(v.kind==='url'){
     document.getElementById('vplay').innerHTML=
-      `<div class="card"><div class="ptitle">${esc(v.title)}</div><video src="${v.uri}" controls autoplay></video></div>`;
+      `<div class="card"><div class="ptitle">${esc(v.title)}</div><video src="${esc(v.uri)}" controls autoplay></video></div>`;
     window.scrollTo(0,0);
   } else {
     navigator.clipboard&&navigator.clipboard.writeText(v.uri);
-    askConfirm('网盘分享链接需在网盘 App / 浏览器中打开播放。链接已复制，是否打开？', ()=>window.open(v.uri,'_blank'));
+    askConfirm('该链接需在网盘 App / 浏览器中打开。链接已复制，是否打开？', ()=>window.open(v.uri,'_blank'));
   }
 }
-function delVideo(id){ askConfirm('移除该视频？', ()=>{ DB.videos=DB.videos.filter(v=>v.id!==id); save(); render(); }); }
+function delVideo(id){
+  const v=DB.videos.find(x=>x.id===id);
+  askConfirm(`删除「${v?v.title:''}」？`, ()=>{
+    DB.videos=DB.videos.filter(v=>v.id!==id);
+    if(v&&v.kind==='local') idbDel(v.id);
+    delete VURL_CACHE[id];
+    save(); render();
+  });
+}
 
 /* ================= 背诵 ================= */
 let RC_MODE='due', RC_FLIP={}, RC_ADD=false, RC_DECKF='';
@@ -1066,8 +1251,13 @@ const TIPS_BUILTINS=[
  {m:'金监专业课',t:'多选全对才得分',b:'少选/多选/错选均0分。多选占20分且是重灾区（基线2/20），必须专项训练。',s:'2025真题规则'},
  {m:'金监专业课',t:'专业课=半个笔试',b:'笔试折算：行测25%+申论25%+专业50%。120题/120分钟，计算机单选60题是得分主战场。',s:'专业课指南'},
 ];
-let TIP_FILTER='全部', TIP_ADD=false;
+let TIP_FILTER='全部', TIP_ADD=false, TIP_EDIT=0;
 if(!DB.tips) DB.tips=[];
+/* 内置方法论并入我的技巧（一次性），之后全部可编辑/删除 */
+if(!DB.tipsMerged){
+  TIPS_BUILTINS.forEach(t=>DB.tips.push({ id:nid(), m:t.m, t:t.t, b:t.b, s:t.s, created:Date.now() }));
+  DB.tipsMerged=true; save();
+}
 function viewTips(){
   const mods=['全部','通用','资料分析','判断推理','言语理解','数量关系','申论','金监专业课'];
   let h=`<div class="reasons" style="margin-bottom:10px">${mods.map(m=>`<span class="reason ${TIP_FILTER===m?'on':''}" onclick="tipFilter('${m}')">${m}</span>`).join('')}</div>`;
@@ -1084,17 +1274,20 @@ function viewTips(){
     </div>`;
   }
   const match=m=>TIP_FILTER==='全部'||m===TIP_FILTER;
-  const mine=DB.tips.filter(t=>match(t.m)).slice().reverse();
-  const builtin=TIPS_BUILTINS.filter(t=>match(t.m));
-  if(mine.length) h+=`<div class="ptitle" style="margin:4px 2px 8px">📌 我的技巧（${mine.length}）</div>`;
-  mine.forEach(t=>{
-    h+=`<div class="card"><div class="rtag">${esc(t.m)}<span style="float:right" onclick="tipDel(${t.id})">🗑</span></div>
+  const list=DB.tips.filter(t=>match(t.m)).slice().reverse();
+  if(list.length) h+=`<div class="ptitle" style="margin:4px 2px 8px">📌 技巧（${list.length}）</div>`;
+  list.forEach(t=>{
+    if(TIP_EDIT===t.id){
+      h+=`<div class="card"><div class="ptitle">编辑技巧</div>
+        <input type="text" id="tipEM" placeholder="所属模块" value="${esc(t.m)}" style="width:100%;margin-bottom:8px">
+        <input type="text" id="tipET" placeholder="技巧名称" value="${esc(t.t)}" style="width:100%;margin-bottom:8px">
+        <textarea id="tipEB" rows="3" placeholder="具体做法" style="width:100%;margin-bottom:8px">${esc(t.b)}</textarea>
+        <input type="text" id="tipES" placeholder="出处（可选）" value="${esc(t.s||'')}" style="width:100%;margin-bottom:8px">
+        <div class="actions"><button class="btn" onclick="tipEditSave(${t.id})">保存</button><button class="btn ghost" onclick="tipEditCancel()">取消</button></div></div>`;
+      return;
+    }
+    h+=`<div class="card"><div class="rtag">${esc(t.m)}${t.s?` · ${esc(t.s)}`:''}<span style="float:right"><span onclick="tipEditStart(${t.id})" style="margin-right:12px">✏️</span><span onclick="tipDel(${t.id})">🗑</span></span></div>
       <div class="ptitle">${esc(t.t)}</div><div class="pline">${esc(t.b)}</div></div>`;
-  });
-  if(builtin.length) h+=`<div class="ptitle" style="margin:12px 2px 8px">📖 UP主方法论（${builtin.length}）</div>`;
-  builtin.forEach(t=>{
-    h+=`<div class="card"><div class="rtag">${t.m} · 出处 ${t.s}</div>
-      <div class="ptitle">${t.t}</div><div class="pline">${t.b}</div></div>`;
   });
   return h;
 }
@@ -1109,6 +1302,18 @@ function tipAdd(){
   save(); render();
 }
 function tipDel(id){ askConfirm('删除这条技巧？', ()=>{ DB.tips=DB.tips.filter(t=>t.id!==id); save(); render(); }); }
+function tipEditStart(id){ TIP_EDIT=id; render(); }
+function tipEditCancel(){ TIP_EDIT=0; render(); }
+function tipEditSave(id){
+  const t=DB.tips.find(x=>x.id===id); if(!t) return;
+  const m=(document.getElementById('tipEM').value||'').trim()||'通用';
+  const tt=(document.getElementById('tipET').value||'').trim();
+  const b=(document.getElementById('tipEB').value||'').trim();
+  const s=(document.getElementById('tipES').value||'').trim();
+  if(!tt){ toast('技巧名称不能为空'); return; }
+  t.m=m; t.t=tt; t.b=b; t.s=s;
+  TIP_EDIT=0; save(); render();
+}
 
 /* ================= 申论练习 ================= */
 function viewShenlun(){
@@ -1213,7 +1418,8 @@ function viewProfile(){
     <div class="pcell"><div class="pv">${passedList.length}</div><div class="pl">过关考点</div></div>
   </div>
   <div class="card"><div class="ptitle">打卡</div>
-    <div class="rline" style="text-align:left">连续 <b>${streak()}</b> 天 · 累计 <b>${DB.checkins.length}</b> 天</div>
+    <div class="rline" style="text-align:left">连续 <b>${streak()}</b> 天 · 累计 <b>${DB.checkins.length}</b> 天 · 颜色越深做题越多</div>
+    ${calendarHeat()}
     <div class="actions"><button class="${DB.checkins.includes(dayKey())?'ghost':''}" onclick="doCheckin()">${DB.checkins.includes(dayKey())?'✓ 今日已打卡':'今日打卡'}</button></div>
   </div>
   ${td.length>=2?`<div class="card"><div class="ptitle">正确率趋势（最近 ${td.length} 组）</div>${sparkline(td)}</div>`:''}
@@ -1225,17 +1431,99 @@ function viewProfile(){
       <label class="btn ghost" style="text-align:center;cursor:pointer">⬇ 导入备份
         <input type="file" accept=".json" onchange="importDB(this)"></label>
     </div>
+    <div class="gname" style="margin-top:12px">GitHub 云备份（备份文件会包含下方 token，请勿外传）</div>
+    <input type="text" id="ghRepo" placeholder="仓库（如 lionheart6666/demo）" value="${esc(DB.settings.ghRepo||'')}" style="width:100%;margin-bottom:8px">
+    <input type="text" id="ghTok" placeholder="GitHub Token（repo 权限）" value="${esc(DB.settings.ghToken||'')}" style="width:100%;margin-bottom:8px">
+    <div class="actions">
+      <button class="btn ghost" onclick="ghSaveCfg()">保存配置</button>
+      <button onclick="ghUpload()">☁ 上传备份到 GitHub</button>
+    </div>
   </div>
   ${settingsCard()}
-  <div class="card">
-    <div class="ptitle">备考基线</div>
-    <div class="pline">行测 50-60 分 → 目标 70+</div>
-    <div class="pline">专业课 33/100 → 目标 70+</div>
-    <div class="pline">考试: 2026-11-28 专业课 / 11-29 行测申论</div>
-  </div>
+  ${baselineCard()}
   <button class="btn ghost" onclick="resetAll()">清空全部数据（重置）</button>`;
 }
 function resetAll(){ askConfirm('确定清空所有题库、记录、卡片？', ()=>{ localStorage.removeItem(DB_KEY); location.reload(); }); }
+
+/* ================= 打卡日历热力图 ================= */
+let CAL_Y=null, CAL_M=null; // 当前查看的月份（默认本月）
+function calendarHeat(){
+  const now=new Date();
+  const y=CAL_Y||now.getFullYear(), m=(CAL_M==null?now.getMonth():CAL_M);
+  // 每日做题数
+  const cnt={};
+  DB.records.forEach(r=>{ const k=dayKey(r.t); cnt[k]=(cnt[k]||0)+1; });
+  const max=Math.max(1,...Object.values(cnt));
+  const first=new Date(y,m,1), days=new Date(y,m+1,0).getDate();
+  const offset=(first.getDay()+6)%7; // 周一开头
+  const today=dayKey();
+  let h=`<div class="calnav"><span onclick="calShift(-1)">‹ 上月</span><b>${y} 年 ${m+1} 月</b><span onclick="calShift(1)">下月 ›</span></div>`;
+  h+=`<div class="calgrid">${['一','二','三','四','五','六','日'].map(d=>`<div class="calhead">${d}</div>`).join('')}`;
+  for(let i=0;i<offset;i++) h+=`<div></div>`;
+  for(let d=1;d<=days;d++){
+    const k=dayKey(new Date(y,m,d).getTime());
+    const n=cnt[k]||0;
+    const a=n?Math.min(0.88,0.18+0.7*n/max):0;
+    const style=n?`background:rgba(10,132,255,${a.toFixed(2)});color:${a>0.5?'#fff':'var(--text2)'}`:'';
+    h+=`<div class="calcell ${k===today?'today':''}" style="${style}" title="${k}：${n} 题">${d}${DB.checkins.includes(k)?'<span class="cdot"></span>':''}</div>`;
+  }
+  h+=`</div><div class="hint" style="text-align:right;margin-top:6px">橙点=已打卡 · 蓝色深浅=当日做题数</div>`;
+  return h;
+}
+function calShift(dir){
+  const now=new Date();
+  let y=CAL_Y||now.getFullYear(), m=(CAL_M==null?now.getMonth():CAL_M)+dir;
+  if(m<0){ m=11; y--; } if(m>11){ m=0; y++; }
+  CAL_Y=y; CAL_M=m; render();
+}
+
+/* ================= 备考基线（可编辑） ================= */
+const BASELINE_DEFAULT=['行测 50-60 分 → 目标 70+','专业课 33/100 → 目标 70+','考试: 2026-11-28 专业课 / 11-29 行测申论'];
+let BASE_EDIT=false;
+function baselineLines(){ return Array.isArray(DB.settings.baseline)?DB.settings.baseline:BASELINE_DEFAULT; }
+function baselineCard(){
+  if(BASE_EDIT){
+    return `<div class="card"><div class="ptitle">备考基线</div>
+      <div class="hint" style="margin:0 0 8px">每行一条</div>
+      <textarea id="baseT" rows="4" style="width:100%">${esc(baselineLines().join('\n'))}</textarea>
+      <div class="actions"><button class="btn" onclick="baseSave()">保存</button><button class="btn ghost" onclick="baseEditToggle()">取消</button></div></div>`;
+  }
+  return `<div class="card"><div class="ptitle">备考基线 <span style="float:right;font-size:12px;color:var(--accent);font-weight:400;cursor:pointer" onclick="baseEditToggle()">编辑</span></div>
+    ${baselineLines().map(l=>`<div class="pline">${esc(l)}</div>`).join('')}</div>`;
+}
+function baseEditToggle(){ BASE_EDIT=!BASE_EDIT; render(); }
+function baseSave(){
+  const lines=(document.getElementById('baseT').value||'').split('\n').map(s=>s.trim()).filter(Boolean);
+  DB.settings.baseline=lines.length?lines:BASELINE_DEFAULT.slice();
+  BASE_EDIT=false; save(); render();
+}
+
+/* ================= GitHub 云备份 ================= */
+function ghSaveCfg(){
+  DB.settings.ghRepo=(document.getElementById('ghRepo').value||'').trim();
+  DB.settings.ghToken=(document.getElementById('ghTok').value||'').trim();
+  save(); toast('已保存 GitHub 配置'); render();
+}
+async function ghUpload(){
+  const tok=(DB.settings.ghToken||'').trim(), repo=(DB.settings.ghRepo||'').trim();
+  if(!tok||!repo){ toast('请先填写仓库和 Token 并保存'); return; }
+  toast('正在上传备份…');
+  const path='backups/kaogong-backup-'+dayKey()+'.json';
+  const api='https://api.github.com/repos/'+repo+'/contents/'+path;
+  const head={ 'Authorization':'Bearer '+tok, 'Accept':'application/vnd.github+json' };
+  try{
+    let sha;
+    const cur=await fetch(api,{headers:head});
+    if(cur.ok){ sha=(await cur.json()).sha; }
+    const content=btoa(unescape(encodeURIComponent(exportPayload())));
+    const r=await fetch(api,{ method:'PUT', headers:{...head,'Content-Type':'application/json'},
+      body:JSON.stringify({ message:'chore: 公路备份 '+dayKey(), content, ...(sha?{sha}:{}) }) });
+    if(r.ok) toast('备份已上传到 GitHub ✓');
+    else if(r.status===401||r.status===403) toast('Token 无效或权限不足');
+    else if(r.status===404) toast('仓库不存在或无写权限');
+    else toast('上传失败: HTTP '+r.status);
+  }catch(e){ toast('网络错误，上传失败（手机需联网）'); }
+}
 
 /* ================= 应用内确认弹层（替代 confirm，预览环境禁用了原生对话框） ================= */
 let CONFIRM_ASK=null;
@@ -1243,7 +1531,12 @@ function askConfirm(msg, onYes){ CONFIRM_ASK={msg,onYes}; render(); }
 function confirmYes(){ const c=CONFIRM_ASK; CONFIRM_ASK=null; if(c&&c.onYes) c.onYes(); else render(); }
 function confirmNo(){ CONFIRM_ASK=null; render(); }
 let TOAST=null, TOAST_T=null;
-function toast(msg){ TOAST=msg; render(); clearTimeout(TOAST_T); TOAST_T=setTimeout(()=>{ TOAST=null; render(); }, 2200); }
+let RENDERING=false;
+function toast(msg){
+  TOAST=msg; clearTimeout(TOAST_T);
+  TOAST_T=setTimeout(()=>{ TOAST=null; render(); }, 2200);
+  if(!RENDERING) render(); // 渲染流程中触发的 toast 不再重入 render，防止定时器被无限重置
+}
 
 /* ================= 渲染 ================= */
 function esc(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -1260,16 +1553,21 @@ function render(){
     case 'recite': content=viewRecite(); break;
     case 'tips': content=viewTips(); break;
     case 'mindmap': content=viewMindmap(); break;
+    case 'papers': content=viewPapers(); break;
+    case 'paper': content=viewPaper(); break;
     case 'profile': content=viewProfile(); break;
   }
   const isStack=STACK.includes(S.view);
-  const header=`<div class="header">${isStack?`<span class="back" onclick="goTab('${S.tab}')">‹ 返回</span>`:''}${TITLES[S.view]||''}</div>`;
+  const backAct = S.view==='paper' ? "go('papers')" : `goTab('${S.tab}')`;
+  const header=`<div class="header">${isStack?`<span class="back" onclick="${backAct}">‹ 返回</span>`:''}${TITLES[S.view]||''}</div>`;
   const tabbar=`<div class="tabbar">${TABS.map(t=>
     `<div class="tab ${S.tab===t.k&&!isStack?'on':''}" onclick="goTab('${t.k}')"><span class="ic">${icon(t.ic)}</span>${t.n}</div>`).join('')}</div>`;
   const modal = CONFIRM_ASK ? `<div class="overlay"><div class="dialog"><div class="dmsg">${esc(CONFIRM_ASK.msg)}</div>
     <div class="drow"><button class="btn ghost" onclick="confirmNo()">取消</button><button class="btn" onclick="confirmYes()">确定</button></div></div></div>` : '';
   const toastEl = TOAST ? `<div class="toast">${esc(TOAST)}</div>` : '';
+  RENDERING=true;
   app.innerHTML=header+`<div class="body">${content}</div>`+tabbar+modal+toastEl;
+  RENDERING=false;
 }
 applySettings();
 render();
