@@ -278,21 +278,35 @@ function exportPayload(){
   if(d.settings) delete d.settings.ghToken;
   return JSON.stringify(d,null,2);
 }
+/* 备份文件名：公路+日期+时间，如 公路20261022-153045.json */
+function backupName(){
+  const d=new Date(), p=n=>String(n).padStart(2,'0');
+  return `公路${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.json`;
+}
+let LAST_BK='';
 function exportDB(){
   const payload=exportPayload();
-  // App 内：走原生桥直接写入系统「下载」目录
+  // App 内：走原生桥直接写入系统「下载」目录，完成后回调 backupDone
   if(window.AndroidBackup && AndroidBackup.save){
-    AndroidBackup.save(`kaogong-backup-${dayKey()}.json`, btoa(unescape(encodeURIComponent(payload))));
-    toast('备份已保存到系统下载目录');
+    LAST_BK=backupName();
+    toast('正在导出备份…');
+    AndroidBackup.save(LAST_BK, btoa(unescape(encodeURIComponent(payload))));
     return;
   }
   const blob=new Blob([payload],{type:'application/json'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
-  a.download=`kaogong-backup-${dayKey()}.json`;
+  a.download=backupName();
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),3000);
   toast('备份已导出');
+}
+/* 原生桥回调：写入完成弹出确认，可直接跳转系统「下载」文件夹 */
+function backupDone(err){
+  if(err){ toast('备份保存失败：'+err); return; }
+  askConfirm(`备份已保存到系统「下载」文件夹 ✓\n文件名：${LAST_BK}`,
+    ()=>{ if(window.AndroidBackup && AndroidBackup.openDownloads) AndroidBackup.openDownloads(); render(); },
+    {yes:'打开所在文件夹', no:'关闭'});
 }
 function importDB(input){
   const f=input.files&&input.files[0]; if(!f) return;
@@ -1527,7 +1541,7 @@ async function ghUpload(){
 
 /* ================= 应用内确认弹层（替代 confirm，预览环境禁用了原生对话框） ================= */
 let CONFIRM_ASK=null;
-function askConfirm(msg, onYes){ CONFIRM_ASK={msg,onYes}; render(); }
+function askConfirm(msg, onYes, labels){ CONFIRM_ASK={msg,onYes,yesLabel:labels&&labels.yes,noLabel:labels&&labels.no}; render(); }
 function confirmYes(){ const c=CONFIRM_ASK; CONFIRM_ASK=null; if(c&&c.onYes) c.onYes(); else render(); }
 function confirmNo(){ CONFIRM_ASK=null; render(); }
 let TOAST=null, TOAST_T=null;
@@ -1563,7 +1577,7 @@ function render(){
   const tabbar=`<div class="tabbar">${TABS.map(t=>
     `<div class="tab ${S.tab===t.k&&!isStack?'on':''}" onclick="goTab('${t.k}')"><span class="ic">${icon(t.ic)}</span>${t.n}</div>`).join('')}</div>`;
   const modal = CONFIRM_ASK ? `<div class="overlay"><div class="dialog"><div class="dmsg">${esc(CONFIRM_ASK.msg)}</div>
-    <div class="drow"><button class="btn ghost" onclick="confirmNo()">取消</button><button class="btn" onclick="confirmYes()">确定</button></div></div></div>` : '';
+    <div class="drow"><button class="btn ghost" onclick="confirmNo()">${CONFIRM_ASK.noLabel||'取消'}</button><button class="btn" onclick="confirmYes()">${CONFIRM_ASK.yesLabel||'确定'}</button></div></div></div>` : '';
   const toastEl = TOAST ? `<div class="toast">${esc(TOAST)}</div>` : '';
   RENDERING=true;
   app.innerHTML=header+`<div class="body">${content}</div>`+tabbar+modal+toastEl;

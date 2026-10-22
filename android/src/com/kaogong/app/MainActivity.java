@@ -1,6 +1,7 @@
 package com.kaogong.app;
 
 import android.app.Activity;
+import android.app.DownloadManager;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.net.Uri;
@@ -20,7 +21,8 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.Toast;
+
+import org.json.JSONObject;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -129,8 +131,8 @@ public class MainActivity extends Activity {
 
     /** 网页端导出备份的原生桥：把 base64 内容写入系统「下载」目录（Q+ 用 MediaStore，免权限） */
     public static class BackupBridge {
-        private final Activity act;
-        BackupBridge(Activity a) { this.act = a; }
+        private final MainActivity act;
+        BackupBridge(MainActivity a) { this.act = a; }
 
         @JavascriptInterface
         public void save(final String name, final String b64) {
@@ -162,17 +164,30 @@ public class MainActivity extends Activity {
                     } catch (Exception e) {
                         err = e.getMessage();
                     }
-                    if (err != null) {
-                        final String msg = "备份保存失败: " + err;
-                        act.runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                Toast.makeText(act, msg, Toast.LENGTH_LONG).show();
-                            }
-                        });
-                    }
+                    // 写入完成后回调网页：backupDone(err)，由网页弹出「打开所在文件夹」入口
+                    final String fErr = err;
+                    act.runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (act.web == null) return;
+                            String call = fErr == null
+                                    ? "backupDone(null)"
+                                    : "backupDone(" + JSONObject.quote(fErr) + ")";
+                            act.web.evaluateJavascript(call, null);
+                        }
+                    });
                 }
             }).start();
+        }
+
+        /** 打开系统「下载」应用，便于用户直接找到刚导出的备份 */
+        @JavascriptInterface
+        public void openDownloads() {
+            try {
+                Intent i = new Intent(DownloadManager.ACTION_VIEW_DOWNLOADS);
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                act.startActivity(i);
+            } catch (Exception ignored) { }
         }
     }
 
